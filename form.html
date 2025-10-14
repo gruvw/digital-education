@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Start Form — Redirecting…</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #f7fafc;
+      color: #0f172a;
+    }
+    .card {
+      background: white;
+      padding: 20px 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(2,6,23,0.08);
+      text-align: center;
+      max-width: 520px;
+    }
+    a { color: #2563eb; }
+    small { color: #475569; display:block; margin-top: 8px;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Opening form…</h2>
+    <p id="msg">Redirecting with local start time.</p>
+    <p><small>If you are not redirected, <a id="fallback" href="#">click here</a>.</small></p>
+  </div>
+
+  <script>
+    (function () {
+      // ---------- CONFIGURE THESE ----------
+      // Put your Google Form's "viewform" URL here (the base form URL, not a prefilled link).
+      // Example: "https://docs.google.com/forms/d/e/1FAIpQLSdEXAMPLE/viewform"
+      const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScLipM_HyKlbnBu38c3Dq6sNiaxV_Wl3jvMD61TJ7W6vmCSNA/viewform";
+
+      // Put the entry ID for the Short Answer field you will use to store the start time.
+      // Example: "entry.987654321"
+      const ENTRY_ID = "entry.740088742";
+      // -------------------------------------
+
+      // Helper: zero-pad numbers to 2 digits
+      function z(n){ return n < 10 ? "0"+n : ""+n; }
+
+      // Use the client's local date/time
+      const now = new Date();
+
+      // Format: DD/MM/YYYY HH:MM:SS (local time)
+      const dd = z(now.getDate());
+      const mm = z(now.getMonth() + 1);
+      const yyyy = now.getFullYear();
+      const hh = z(now.getHours());
+      const min = z(now.getMinutes());
+      const ss = z(now.getSeconds());
+      const formatted = `${dd}/${mm}/${yyyy} ${hh}:${min}:${ss}`;
+
+      // Build the prefill param (URL-encoded)
+      const param = `${ENTRY_ID}=${encodeURIComponent(formatted)}`;
+
+      // If your form URL already has query parameters, use '&' else use '?'
+      const joiner = FORM_URL.includes('?') ? '&' : '?';
+      const redirectUrl = FORM_URL + joiner + param;
+
+      // Update UI for debugging/fallback
+      document.getElementById('msg').textContent = "Redirecting with start time: " + formatted;
+      const fallback = document.getElementById('fallback');
+      fallback.href = redirectUrl;
+
+      // Immediately redirect (replace so "back" doesn't return to this page)
+      // slight delay to allow screen readers / browser to show message
+      setTimeout(function(){ window.location.replace(redirectUrl); }, 300);
+    })();
+  </script>
+</body>
+</html>
