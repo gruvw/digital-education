@@ -3,7 +3,12 @@ import csv
 from typing import Callable, Dict, Iterable, List, TypeVar
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
+import seaborn as sns
+import numpy as np
 
 
 SURVEY_CSV = "data.csv"
@@ -138,7 +143,7 @@ def parse_survey_answers(csv_path: str, grading_path: str) -> List[Answer]:
     with open(grading_path, "r") as json_file:
         grading = json.load(json_file)
 
-    with open(csv_path, "r") as csv_file:
+    with open(csv_path, "r", encoding="utf-8") as csv_file:
         reader = csv.reader(csv_file)
 
         # Skip header row
@@ -276,11 +281,24 @@ def aggregate_by(
     return {key: fold(values) for key, values in grouped.items()}
 
 
-def select(
+def keep(
     answers: Iterable[Answer],
     test: Callable[[Answer], bool],
 ) -> List[Answer]:
     return list(filter(test, answers))
+
+
+def bucket_genders(genders):
+    c = Counter(gender for gender in genders)
+    male = c.get("Male", 0)
+    female = c.get("Female", 0)
+    other = sum(v for k,v in c.items() if k not in ("Male","Female"))
+    return [male, female, other]
+
+
+def bucket_age_ranges(age_ranges, ranges):
+    c = Counter(age_range.strip().lower() for age_range in age_ranges)
+    return [c.get(group, 0) for group in ranges]
 
 
 def main():
@@ -289,14 +307,27 @@ def main():
     activity_type = lambda a: a.activity_type
     pre_score = lambda a: a.pre_score
     post_score = lambda a: a.post_score
+    learning_gain = lambda a: a.learning_gain
     rel_learning_gain = lambda a: a.relative_learning_gain
+    duration = lambda a: a.duration
+    age = lambda a: a.gender
+    age_range = lambda a: a.age_group
 
     answers = parse_survey_answers(SURVEY_CSV, GRADING_JSON)
 
-    selected_answers = select(answers, lambda a: a.duration >= timedelta(minutes=25))
+    # = Exclusion criteria =
+
+    total_len = len(answers)
+    answers = keep(answers, lambda a: a.learning_gain >= 0.05)
+
+    print(f"Exclusion criteria excluded {total_len - len(answers)}")
+    print("")
 
     print(f"Total answers count: {len(answers)}")
     print(f"Total answers groups: {aggregate_by(answers, activity_type, fold=len)}")
+    print()
+
+    print(f"Mean time spent groups: {aggregate_by(answers, activity_type, duration, lambda l: (sum(l, timedelta(0)) / len(l)).total_seconds() / 60)}")
     print()
 
     # print(f"Pre-test scores: {group(answers, pre_score)}")
@@ -305,12 +336,11 @@ def main():
 
     print(f"Pre-test means: {aggregate_by(answers, activity_type, pre_score, mean)}")
     print(f"Post-test means: {aggregate_by(answers, activity_type, post_score, mean)}")
-    print(f"Selected post-test means: {aggregate_by(selected_answers, activity_type, post_score, mean)}")
     print()
 
-    print(f"Relative learning gain mean: {aggregate(answers, rel_learning_gain, mean)}")
+    rel_learning_mean = aggregate(answers, rel_learning_gain, mean)
+    print(f"Relative learning gain mean: {rel_learning_mean}")
     print(f"Relative learning gain means: {aggregate_by(answers, activity_type, rel_learning_gain, mean)}")
-    print(f"Selected relative learning gain means: {aggregate_by(selected_answers, activity_type, rel_learning_gain, mean)}")
     print()
 
     # for answer in answers:
@@ -318,7 +348,323 @@ def main():
 
     # print(answers[-1])
 
-    # matplotlib boxplot
+    pre_test = aggregate_by(answers, activity_type, pre_score)
+    post_test = aggregate_by(answers, activity_type, post_score)
+    learning = aggregate_by(answers, activity_type, learning_gain)
+    rel_learning = aggregate_by(answers, activity_type, rel_learning_gain)
+
+    fontsize = 14
+    titlesize = 16
+
+    # = Demographics plot =
+
+    genders = aggregate_by(answers, activity_type, age, bucket_genders)
+
+    gender_colors = ["#4A90E2", "#FF6EB4", "#C0C0C0"] # Male, Female, Others
+
+    fig, axs = plt.subplots(1,2, figsize=(8, 4))
+    _, _, texts0 = axs[0].pie(
+        genders["I-PS"],
+        autopct=lambda p: "%1.1f%%" % p if p > 0 else "",
+        startangle=90,
+        colors=gender_colors,
+        counterclock=False,
+    )
+    axs[0].set_title(f"I-PS ({sum(genders['I-PS'])})", fontsize=titlesize)
+    axs[0].axis("equal")
+    _, _, texts1 = axs[1].pie(
+        genders["PS-I"],
+        autopct=lambda p: "%1.1f%%" % p if p > 0 else "",
+        startangle=90,
+        colors=gender_colors,
+        counterclock=False,
+    )
+    axs[1].set_title(f"PS-I ({sum(genders['PS-I'])})", fontsize=titlesize)
+    axs[1].axis("equal")
+
+    for text in [*texts0, *texts1]:
+        text.set_fontsize(fontsize)
+
+    fig.legend(
+        [Patch(color=c) for c in gender_colors[:2]],
+        ["Male", "Female"],
+        loc="upper right",
+        bbox_to_anchor=(1.15, 1),
+        fontsize=fontsize,
+    )
+
+    fig.tight_layout()
+    fig.savefig("genders_plot.png", dpi=150, bbox_inches="tight")
+    # plt.show()
+    plt.close()
+
+    ranges = ["≤18", "19-21", "22-24", "25-27", "≥28"]
+    age_ranges = aggregate_by(answers, activity_type, age_range, lambda l: bucket_age_ranges(l, ranges))
+
+    age_colors = ["#4C72B0", "#55A868", "#C44E52", "#8172B2", "#CCB974"]
+
+    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+    _, _, texts0 = axs[0].pie(
+        age_ranges["I-PS"],
+        colors=age_colors,
+        autopct=lambda p: "%1.1f%%" % p if p > 0 else "",
+        startangle=90,
+        counterclock=False,
+    )
+    axs[0].set_title(f"I-PS ({sum(age_ranges['I-PS'])})", fontsize=titlesize)
+    axs[0].axis("equal")
+
+    _, _, texts1 = axs[1].pie(
+        age_ranges["PS-I"],
+        colors=age_colors,
+        autopct=lambda p: "%1.1f%%" % p if p > 0 else "",
+        startangle=90,
+        counterclock=False,
+    )
+    axs[1].set_title(f"PS-I ({sum(age_ranges['PS-I'])})", fontsize=titlesize)
+    axs[1].axis("equal")
+
+    for text in [*texts0, *texts1]:
+        text.set_fontsize(fontsize)
+
+    fig.legend(
+        [Patch(color=c) for c in age_colors],
+        ranges,
+        loc="upper right",
+        bbox_to_anchor=(1.15, 1),
+        fontsize=fontsize,
+    )
+
+    fig.tight_layout()
+    fig.savefig("age_ranges_plot.png", dpi=150, bbox_inches="tight")
+    # plt.show()
+    plt.close()
+
+    # = Learning gain plot =
+
+    dataset = [
+        pre_test["I-PS"], pre_test["PS-I"],
+        post_test["I-PS"], post_test["PS-I"],
+        learning["I-PS"], learning["PS-I"],
+        rel_learning["I-PS"], rel_learning["PS-I"],
+    ]
+
+    box_width = 0.3
+    widths = [box_width] * len(dataset)
+    inter_delta = box_width + 0.1
+    exter_delta = box_width + 0.4
+    positions = [
+        1, 1+inter_delta,
+        1+inter_delta+exter_delta, 1+2*inter_delta+exter_delta,
+        1+2*inter_delta+2*exter_delta, 1+3*inter_delta+2*exter_delta,
+        1+3*inter_delta+3*exter_delta, 1+4*inter_delta+3*exter_delta,
+    ]
+    ips_color = "cornflowerblue"
+    psi_color = "mediumseagreen"
+    colors = [ips_color, psi_color]*len(dataset)
+
+    meanprops = dict(
+        marker="D",
+        markeredgecolor="black",
+        markerfacecolor="black",
+        markersize=6,
+    )
+
+    plt.subplots(figsize=(7, 7.5))
+    bp = plt.boxplot(
+        dataset,
+        positions=positions,
+        patch_artist=True,
+        medianprops=dict(color="black", linewidth=3),
+        showmeans=True,
+        widths=widths,
+        meanprops=meanprops,
+    )
+    for patch, color in zip(bp["boxes"], colors):
+        patch.set(facecolor=color)
+
+    plt.xticks(
+        [(a + b) / 2 for a, b in zip(positions[::2], positions[1::2])],
+        ["Pre-test\nscore", "Post-test\nscore", "Learning\ngain", "Relative learning\ngain"],
+        fontsize=fontsize,
+    )
+    plt.xlim(positions[0]-exter_delta/2, positions[-1]+exter_delta/2)
+    plt.yticks(fontsize=fontsize)
+    plt.ylabel("Score", fontsize=titlesize)
+
+    legend_patches = [
+        Patch(facecolor=colors[0], edgecolor="none", label="I-PS"),
+        Patch(facecolor=colors[1], edgecolor="none", label="PS-I"),
+        Line2D([0], [0], color="w", label="Mean", **meanprops)
+    ]
+    plt.legend(
+        handles=legend_patches,
+        loc="upper left",
+        fontsize=fontsize,
+    )
+
+    plt.grid(True, alpha=0.3, linestyle="-")
+    plt.tight_layout()
+    plt.savefig("learning_gain_plot.png", dpi=150)
+    # plt.show()
+    plt.close()
+
+    # = Interaction plot (gender) =
+
+    gender_data = {
+        "Male": aggregate_by(keep(answers, lambda a: a.gender == "Male"), activity_type, rel_learning_gain),
+        "Female": aggregate_by(keep(answers, lambda a: a.gender == "Female"), activity_type, rel_learning_gain),
+    }
+
+    genders = gender_data.keys()
+    conditions = ["I-PS", "PS-I"]
+    colors = [ips_color, psi_color]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    x_positions = np.arange(len(genders))
+
+    offset = 0.04
+    for i, (condition, color) in enumerate(zip(conditions, colors)):
+        means = []
+        ci_lower = []
+        ci_upper = []
+
+        for gender in genders:
+            data = gender_data[gender][condition]
+            mean = np.mean(data)
+            means.append(mean)
+            # calculate confidence interval
+            confidence = 90
+            delta = (100 - confidence) / 2
+            ci_lower.append(mean - np.percentile(data, delta))
+            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+        x_offset = x_positions + (offset if i == 1 else -offset)
+
+        ax.plot(x_offset, means, marker="D", markersize=8,
+                color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
+                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+
+    ax.set_ylabel("Relative learning gain", fontsize=titlesize)
+    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
+    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([f"{x}\n({len(gender_data[x][conditions[0]])}, {len(gender_data[x][conditions[1]])})" for x in genders], fontsize=fontsize)
+    ax.legend(fontsize=fontsize, loc="lower center")
+    ax.grid(True, alpha=0.3, linestyle="-")
+
+    plt.tight_layout()
+    plt.savefig("gender_interaction_plot.png", dpi=150, bbox_inches="tight")
+    # plt.show()
+    plt.close()
+
+    # = Interaction plot (age) =
+
+    age_data = {
+        "<25": aggregate_by(keep(answers, lambda a: a.age_group == "19-21" or a.age_group == "22-24"), activity_type, rel_learning_gain),
+        "≥25": aggregate_by(keep(answers, lambda a: a.age_group == "25-27" or a.age_group == "≥28"), activity_type, rel_learning_gain),
+    }
+
+    ages = age_data.keys()
+    conditions = ["I-PS", "PS-I"]
+    colors = [ips_color, psi_color]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    x_positions = np.arange(len(ages))
+
+    offset = 0.04
+    for i, (condition, color) in enumerate(zip(conditions, colors)):
+        means = []
+        ci_lower = []
+        ci_upper = []
+
+        for age in ages:
+            data = age_data[age][condition]
+            mean = np.mean(data)
+            means.append(mean)
+            # calculate confidence interval
+            confidence = 90
+            delta = (100 - confidence) / 2
+            ci_lower.append(mean - np.percentile(data, delta))
+            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+        x_offset = x_positions + (offset if i == 1 else -offset)
+
+        ax.plot(x_offset, means, marker="D", markersize=8,
+                color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
+                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+
+    ax.set_ylabel("Relative learning gain", fontsize=titlesize)
+    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
+    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_xlabel("Age [years]", fontsize=titlesize)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([f"{x}\n({len(age_data[x][conditions[0]])}, {len(age_data[x][conditions[1]])})" for x in ages], fontsize=fontsize)
+    ax.legend(fontsize=fontsize, loc="lower center")
+    ax.grid(True, alpha=0.3, linestyle="-")
+
+    plt.tight_layout()
+    plt.savefig("age_interaction_plot.png", dpi=150, bbox_inches="tight")
+    # plt.show()
+    plt.close()
+
+    # = Interaction plot (duration) =
+
+    duration_data = {
+        "<35": aggregate_by(keep(answers, lambda a: a.duration.total_seconds() / 60 < 35), activity_type, rel_learning_gain),
+        "35-50": aggregate_by(keep(answers, lambda a: 35 <= a.duration.total_seconds() / 60 <= 50), activity_type, rel_learning_gain),
+        ">50": aggregate_by(keep(answers, lambda a: 50 < a.duration.total_seconds() / 60), activity_type, rel_learning_gain),
+    }
+
+    durations = duration_data.keys()
+    conditions = ["I-PS", "PS-I"]
+    colors = [ips_color, psi_color]
+
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    x_positions = np.arange(len(durations))
+
+    offset = 0.04
+    for i, (condition, color) in enumerate(zip(conditions, colors)):
+        means = []
+        ci_lower = []
+        ci_upper = []
+
+        for duration in durations:
+            data = duration_data[duration][condition]
+            mean = np.mean(data)
+            means.append(mean)
+            # calculate confidence interval
+            confidence = 90
+            delta = (100 - confidence) / 2
+            ci_lower.append(mean - np.percentile(data, delta))
+            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+        x_offset = x_positions + (offset if i == 1 else -offset)
+
+        ax.plot(x_offset, means, marker="D", markersize=8,
+                color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
+                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+
+    ax.set_ylabel("Relative learning gain", fontsize=titlesize)
+    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
+    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_xlabel("Duration [minutes]", fontsize=titlesize)
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([f"{x}\n({len(duration_data[x][conditions[0]])}, {len(duration_data[x][conditions[1]])})" for x in durations], fontsize=fontsize)
+    ax.legend(fontsize=fontsize, loc="lower center")
+    ax.grid(True, alpha=0.3, linestyle="-")
+
+    plt.tight_layout()
+    plt.savefig("duration_interaction_plot.png", dpi=150, bbox_inches="tight")
+    # plt.show()
+    plt.close()
+
     # statsmodels.api sm.stats.anova_lm
 
 
