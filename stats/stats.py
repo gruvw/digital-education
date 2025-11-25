@@ -7,8 +7,8 @@ from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
-import seaborn as sns
 import numpy as np
+from ANOVA import multi_way_anova
 
 
 SURVEY_CSV = "data.csv"
@@ -355,6 +355,10 @@ def main():
 
     fontsize = 14
     titlesize = 16
+
+    # = ANOVA =
+
+    print(multi_way_anova(answers,["activity_type", "gender"], "relative_learning_gain")["anova_table"])
 
     # = Demographics plot =
 
