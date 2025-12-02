@@ -499,7 +499,7 @@ def main():
         fontsize=fontsize,
     )
     plt.xlim(positions[0]-exter_delta/2, positions[-1]+exter_delta/2)
-    # plt.yticks(scale, fontsize=fontsize)
+    plt.yticks(fontsize=fontsize)
     plt.ylabel("Score", fontsize=titlesize)
 
     legend_patches = [
