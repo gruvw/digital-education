@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 import numpy as np
+from scipy import stats
 from ANOVA import multi_way_anova
 
 
@@ -318,10 +319,12 @@ def main():
     # = Exclusion criteria =
 
     total_len = len(answers)
-    answers = keep(answers, lambda a: a.learning_gain >= 0.05)
+    # answers = keep(answers, lambda a: a.learning_gain >= 0.05)
 
     print(f"Exclusion criteria excluded {total_len - len(answers)}")
     print("")
+
+    # = General info =
 
     print(f"Total answers count: {len(answers)}")
     print(f"Total answers groups: {aggregate_by(answers, activity_type, fold=len)}")
@@ -355,6 +358,8 @@ def main():
 
     fontsize = 14
     titlesize = 16
+
+    scale = [i / 5 for i in range(-5, 5 + 1)]
 
     # = ANOVA =
 
@@ -483,6 +488,7 @@ def main():
         showmeans=True,
         widths=widths,
         meanprops=meanprops,
+        showfliers=False,
     )
     for patch, color in zip(bp["boxes"], colors):
         patch.set(facecolor=color)
@@ -493,7 +499,7 @@ def main():
         fontsize=fontsize,
     )
     plt.xlim(positions[0]-exter_delta/2, positions[-1]+exter_delta/2)
-    plt.yticks(fontsize=fontsize)
+    # plt.yticks(scale, fontsize=fontsize)
     plt.ylabel("Score", fontsize=titlesize)
 
     legend_patches = [
@@ -529,32 +535,43 @@ def main():
     x_positions = np.arange(len(genders))
 
     offset = 0.04
+    n_boot = 5000 # bootstrap resamples
+    confidence = 95
+    alpha = (100 - confidence) / 2
+
     for i, (condition, color) in enumerate(zip(conditions, colors)):
         means = []
         ci_lower = []
         ci_upper = []
 
         for gender in genders:
-            data = gender_data[gender][condition]
-            mean = np.mean(data)
+            data = np.array(gender_data[gender][condition])
+            mean = data.mean()
             means.append(mean)
-            # calculate confidence interval
-            confidence = 90
-            delta = (100 - confidence) / 2
-            ci_lower.append(mean - np.percentile(data, delta))
-            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+            # bootstrap CI of the mean
+            boot_means = []
+            for _ in range(n_boot):
+                sample = np.random.choice(data, size=len(data), replace=True)
+                boot_means.append(sample.mean())
+            boot_means = np.array(boot_means)
+
+            lower = np.percentile(boot_means, alpha)
+            upper = np.percentile(boot_means, 100 - alpha)
+
+            ci_lower.append(mean - lower)
+            ci_upper.append(upper - mean)
 
         x_offset = x_positions + (offset if i == 1 else -offset)
-
-        ax.plot(x_offset, means, marker="D", markersize=8,
-                color=color, linewidth=2, label=condition)
-        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
-                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+        ax.plot(x_offset, means, marker="D", markersize=8, color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt="none", ecolor=color, capsize=5, capthick=2, linewidth=2)
 
     ax.set_ylabel("Relative learning gain", fontsize=titlesize)
-    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
-    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_yticks(scale)
+    ax.set_yticklabels(scale, fontsize=fontsize)
+    ax.set_ylim(-0.2, 1.05)
     ax.set_xticks(x_positions)
+    ax.set_xlabel("Gender", fontsize=titlesize)
     ax.set_xticklabels([f"{x}\n({len(gender_data[x][conditions[0]])}, {len(gender_data[x][conditions[1]])})" for x in genders], fontsize=fontsize)
     ax.legend(fontsize=fontsize, loc="lower center")
     ax.grid(True, alpha=0.3, linestyle="-")
@@ -579,32 +596,37 @@ def main():
 
     x_positions = np.arange(len(ages))
 
-    offset = 0.04
     for i, (condition, color) in enumerate(zip(conditions, colors)):
         means = []
         ci_lower = []
         ci_upper = []
 
         for age in ages:
-            data = age_data[age][condition]
-            mean = np.mean(data)
+            data = np.array(age_data[age][condition])
+            mean = data.mean()
             means.append(mean)
-            # calculate confidence interval
-            confidence = 90
-            delta = (100 - confidence) / 2
-            ci_lower.append(mean - np.percentile(data, delta))
-            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+            # bootstrap CI of the mean
+            boot_means = []
+            for _ in range(n_boot):
+                sample = np.random.choice(data, size=len(data), replace=True)
+                boot_means.append(sample.mean())
+            boot_means = np.array(boot_means)
+
+            lower = np.percentile(boot_means, alpha)
+            upper = np.percentile(boot_means, 100 - alpha)
+
+            ci_lower.append(mean - lower)
+            ci_upper.append(upper - mean)
 
         x_offset = x_positions + (offset if i == 1 else -offset)
-
-        ax.plot(x_offset, means, marker="D", markersize=8,
-                color=color, linewidth=2, label=condition)
-        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
-                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+        ax.plot(x_offset, means, marker="D", markersize=8, color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt="none", ecolor=color, capsize=5, capthick=2, linewidth=2)
 
     ax.set_ylabel("Relative learning gain", fontsize=titlesize)
-    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
-    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_yticks(scale)
+    ax.set_yticklabels(scale, fontsize=fontsize)
+    ax.set_ylim(-0.05, 1.05)
     ax.set_xlabel("Age [years]", fontsize=titlesize)
     ax.set_xticks(x_positions)
     ax.set_xticklabels([f"{x}\n({len(age_data[x][conditions[0]])}, {len(age_data[x][conditions[1]])})" for x in ages], fontsize=fontsize)
@@ -632,32 +654,37 @@ def main():
 
     x_positions = np.arange(len(durations))
 
-    offset = 0.04
     for i, (condition, color) in enumerate(zip(conditions, colors)):
         means = []
         ci_lower = []
         ci_upper = []
 
         for duration in durations:
-            data = duration_data[duration][condition]
-            mean = np.mean(data)
+            data = np.array(duration_data[duration][condition])
+            mean = data.mean()
             means.append(mean)
-            # calculate confidence interval
-            confidence = 90
-            delta = (100 - confidence) / 2
-            ci_lower.append(mean - np.percentile(data, delta))
-            ci_upper.append(np.percentile(data, 100 - delta) - mean)
+
+            # bootstrap CI of the mean
+            boot_means = []
+            for _ in range(n_boot):
+                sample = np.random.choice(data, size=len(data), replace=True)
+                boot_means.append(sample.mean())
+            boot_means = np.array(boot_means)
+
+            lower = np.percentile(boot_means, alpha)
+            upper = np.percentile(boot_means, 100 - alpha)
+
+            ci_lower.append(mean - lower)
+            ci_upper.append(upper - mean)
 
         x_offset = x_positions + (offset if i == 1 else -offset)
-
-        ax.plot(x_offset, means, marker="D", markersize=8,
-                color=color, linewidth=2, label=condition)
-        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt='none',
-                   ecolor=color, capsize=5, capthick=2, linewidth=2)
+        ax.plot(x_offset, means, marker="D", markersize=8, color=color, linewidth=2, label=condition)
+        ax.errorbar(x_offset, means, yerr=[ci_lower, ci_upper], fmt="none", ecolor=color, capsize=5, capthick=2, linewidth=2)
 
     ax.set_ylabel("Relative learning gain", fontsize=titlesize)
-    ax.set_yticks([0, 0.2, 0.4, 0.6, 0.8, 1])
-    ax.set_yticklabels([0, 0.2, 0.4, 0.6, 0.8, 1], fontsize=fontsize)
+    ax.set_yticks(scale)
+    ax.set_yticklabels(scale, fontsize=fontsize)
+    ax.set_ylim(-0.05, 1.05)
     ax.set_xlabel("Duration [minutes]", fontsize=titlesize)
     ax.set_xticks(x_positions)
     ax.set_xticklabels([f"{x}\n({len(duration_data[x][conditions[0]])}, {len(duration_data[x][conditions[1]])})" for x in durations], fontsize=fontsize)
@@ -669,8 +696,77 @@ def main():
     # plt.show()
     plt.close()
 
-    # statsmodels.api sm.stats.anova_lm
+    # == Power analysis ==
+
+    # Extract data for the two conditions
+    ips_gains = rel_learning["I-PS"]
+    psi_gains = rel_learning["PS-I"]
+
+    mean_ips = np.mean(ips_gains)
+    mean_psi = np.mean(psi_gains)
+
+    var_ips = np.var(ips_gains, ddof=1)
+    var_psi = np.var(psi_gains, ddof=1)
+    n_ips = len(ips_gains)
+    n_psi = len(psi_gains)
+
+    pooled_sd = np.sqrt(((n_ips - 1) * var_ips + (n_psi - 1) * var_psi) / (n_ips + n_psi - 2))
+    cohens_f = abs(mean_ips - mean_psi) / (pooled_sd * np.sqrt(2))
+
+    grand_mean = (n_ips * mean_ips + n_psi * mean_psi) / (n_ips + n_psi)
+    ss_between = n_ips * (mean_ips - grand_mean)**2 + n_psi * (mean_psi - grand_mean)**2
+    ss_within = (n_ips - 1) * var_ips + (n_psi - 1) * var_psi
+
+    # Calculate F-statistic for ANOVA
+    df_between = 1  # k - 1 where k = 2 groups
+    df_within = n_ips + n_psi - 2
+    ms_between = ss_between / df_between
+    ms_within = ss_within / df_within
+    f_statistic = ms_between / ms_within
+
+    noncentrality = cohens_f**2 * (n_ips + n_psi)
+    critical_f = stats.f.ppf(0.95, df_between, df_within)
+    power_est = 1 - stats.ncf.cdf(critical_f, df_between, df_within, noncentrality)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    f_max = max(critical_f * 2, 10)
+    f_values = np.linspace(0, f_max, 1000)
+    pdf_central = stats.f.pdf(f_values, df_between, df_within)
+    pdf_noncentral = stats.ncf.pdf(f_values, df_between, df_within, noncentrality)
+
+    ax.plot(f_values, pdf_central, "b-", linewidth=2, label="Null hypothesis (H₀)")
+    ax.plot(f_values, pdf_noncentral, "r--", linewidth=2, label="Alternative hypothesis (H₁)")
+    ax.axvline(critical_f, color="green", linewidth=2, linestyle='-', label=f"Critical F = {critical_f:.3f}")
+
+    f_alpha = f_values[f_values >= critical_f]
+    pdf_alpha = stats.f.pdf(f_alpha, df_between, df_within)
+    ax.fill_between(f_alpha, 0, pdf_alpha, alpha=0.3, color="blue", label=f"α = {0.05:.2f} (Type I error)")
+
+    f_beta = f_values[f_values <= critical_f]
+    pdf_beta = stats.ncf.pdf(f_beta, df_between, df_within, noncentrality)
+    ax.fill_between(f_beta, 0, pdf_beta, alpha=0.3, color="orange", label=f"β = {1-power_est:.3f} (Type II error)")
+
+    f_power = f_values[f_values >= critical_f]
+    pdf_power = stats.ncf.pdf(f_power, df_between, df_within, noncentrality)
+    ax.fill_between(f_power, 0, pdf_power, alpha=0.5, color="red",
+                     label=f"Power (1-β) = {power_est:.3f}")
+
+    ax.axvline(f_statistic, color="black", linewidth=1.5, linestyle=":", label=f"Observed F = {f_statistic:.3f}")
+
+    ax.set_xlabel("F-statistic", fontsize=titlesize)
+    ax.set_ylabel("Probability Density", fontsize=titlesize)
+    ax.set_title(f"Power Analysis: ANOVA (df₁={df_between}, df₂={df_within}, f={cohens_f:.3f}, n={n_ips + n_psi})", fontsize=titlesize)
+    ax.legend(fontsize=fontsize, loc="upper right")
+    ax.grid(True, alpha=0.3, linestyle="-")
+
+    plt.tight_layout()
+    plt.savefig("power_analysis_plot.png", dpi=300, bbox_inches="tight")
+    # plt.show()
+    plt.close()
 
 
 if __name__ == "__main__":
+    np.random.seed(42)
+
     main()
