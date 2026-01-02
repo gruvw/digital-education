@@ -9,7 +9,11 @@ from matplotlib.patches import Patch
 from matplotlib.lines import Line2D
 import numpy as np
 from scipy import stats
-from ANOVA import multi_way_anova
+from statistics import median
+from streamlit.runtime.caching import save_media_data
+
+from ANOVA import multi_way_anova,shapiro_test,kruskal_one_way
+
 
 
 SURVEY_CSV = "data.csv"
@@ -301,6 +305,17 @@ def bucket_age_ranges(age_ranges, ranges):
     c = Counter(age_range.strip().lower() for age_range in age_ranges)
     return [c.get(group, 0) for group in ranges]
 
+def safe_median(xs):
+    cleaned = []
+    for x in xs:
+        if x is None:
+            continue
+        try:
+            cleaned.append(float(x))
+        except (TypeError, ValueError):
+            continue
+    return median(cleaned) if cleaned else None
+
 
 def main():
     # utils
@@ -319,10 +334,10 @@ def main():
     # = Exclusion criteria =
 
     total_len = len(answers)
-    # answers = keep(answers, lambda a: a.learning_gain >= 0.05)
+    selected_answers = keep(answers, lambda a: a.activity_type=="I-PS")
 
     print(f"Exclusion criteria excluded {total_len - len(answers)}")
-    print("")
+    print(shapiro_test(selected_answers,"learning_gain"))
 
     # = General info =
 
@@ -339,11 +354,20 @@ def main():
 
     print(f"Pre-test means: {aggregate_by(answers, activity_type, pre_score, mean)}")
     print(f"Post-test means: {aggregate_by(answers, activity_type, post_score, mean)}")
+
+    print(f"Pre-test medians: {aggregate_by(answers, activity_type, pre_score, safe_median)}")
+    print(f"Post-test medians: {aggregate_by(answers, activity_type, post_score, safe_median)}")
+
+
     print()
 
     rel_learning_mean = aggregate(answers, rel_learning_gain, mean)
     print(f"Relative learning gain mean: {rel_learning_mean}")
     print(f"Relative learning gain means: {aggregate_by(answers, activity_type, rel_learning_gain, mean)}")
+    print()
+
+
+    print(f"learning gain means: {aggregate_by(answers, activity_type, learning_gain, mean)}")
     print()
 
     # for answer in answers:
@@ -363,7 +387,9 @@ def main():
 
     # = ANOVA =
 
-    print(multi_way_anova(answers,["activity_type", "gender"], "relative_learning_gain")["anova_table"])
+    print(multi_way_anova(answers,["activity_type"], "learning_gain")["anova_table"])
+    print()
+    print(kruskal_one_way(answers,"activity_type", "relative_learning_gain"))
 
     # = Demographics plot =
 
